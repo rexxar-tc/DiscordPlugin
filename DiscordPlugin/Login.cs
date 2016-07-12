@@ -19,6 +19,7 @@ namespace DiscordPlugin
 
         public MyGuiControlListbox.Item LoginPrompt = new MyGuiControlListbox.Item(new StringBuilder("= Login to the SE Discord ="), null, null, MySession.Static.LocalHumanPlayer.Identity);
         public LoginState LoginStep = LoginState.Username;
+        public string Username;
 
         public static Login Instance
         {

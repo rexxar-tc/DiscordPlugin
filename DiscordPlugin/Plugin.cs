@@ -7,7 +7,9 @@ using Sandbox;
 using Sandbox.Game.Gui;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
+using VRage.Game;
 using VRage.Plugins;
+using VRageMath;
 
 namespace DiscordPlugin
 {
@@ -16,7 +18,7 @@ namespace DiscordPlugin
         private bool _init;
         private bool _discordInit;
 
-        public static Dictionary<MyGuiControlListbox.Item, List<string[]>> ChatHistories { get; set; }
+        public static Dictionary<MyGuiControlListbox.Item, List<RichTextLabel>> ChatHistories { get; set; } = new Dictionary<MyGuiControlListbox.Item, List<RichTextLabel>>();
         public static MyGuiControlListbox m_playerList;
         public static MyGuiControlTextbox m_chatbox;
         public static MyGuiControlButton m_sendButton;
@@ -30,12 +32,12 @@ namespace DiscordPlugin
          * screwed with our stuff.
          * It's a hack, yes, but there's no other option.
          */
-        private MyGuiControlListbox.Item SelectedItem;
-        private MyGuiControlListbox.Item LastSelectedItem;
-        private StringBuilder CurrentText = new StringBuilder();
-        private StringBuilder LastText = new StringBuilder();
-        private bool CurrentFocus;
-        private bool LastFocus;
+        private MyGuiControlListbox.Item _selectedItem;
+        private MyGuiControlListbox.Item _lastSelectedItem;
+        private readonly StringBuilder _currentText = new StringBuilder();
+        private readonly StringBuilder _lastText = new StringBuilder();
+        private bool _currentFocus;
+        private bool _lastFocus;
 
         [Flags]
         private enum UpdateFlags
@@ -47,6 +49,21 @@ namespace DiscordPlugin
             ButtonPress
         }
 
+        public class RichTextLabel
+        {
+            public RichTextLabel( string from, string message, MyFontEnum fromFont, MyFontEnum messageFont = MyFontEnum.White )
+            {
+                From = from;
+                Message = message;
+                FromFont = fromFont;
+                MessageFont = messageFont;
+            }
+            public string From;
+            public MyFontEnum FromFont;
+            public string Message;
+            public MyFontEnum MessageFont;
+        }
+
         public void Dispose()
         {
             //Login.Instance.loginState = Login.LoginState.Username;
@@ -56,7 +73,7 @@ namespace DiscordPlugin
 
         public void Init( object gameInstance )
         {
-            MySandboxGame.Log.WriteLineAndConsole($"##Discord Plugin: Initializing Discord plugin v{Version}" );
+            MySandboxGame.Log.WriteLineAndConsole($"##Discord Plugin: Initializing v{Version}" );
             MySandboxGame.Log.WriteLine("##Discord Plugin: If something goes wrong, it was Tim's fault.");
 
             if ( !ReflectionUnitTests() )
@@ -65,8 +82,6 @@ namespace DiscordPlugin
                 //don't initialize the bot. without _discordInit set, the plugin is effectively disabled
                 return;
             }
-
-            ChatHistories=new Dictionary<MyGuiControlListbox.Item, List<string[]>>();
 
             //TODO: Initialize discordAPI here. JOHN THIS MEANS YOU
             _discordInit = true;
@@ -103,6 +118,16 @@ namespace DiscordPlugin
                 return;
             }
 
+            if ( m_playerList.SelectedItems.Count > 0 && ChatHistories.Keys.Contains( m_playerList.SelectedItems.First() ) )
+            {
+               m_chatHistory.Clear();
+                foreach ( var text in ChatHistories[m_playerList.SelectedItems.First()] )
+                {
+                    m_chatHistory.AppendText( text.From, text.FromFont, m_chatHistory.TextScale, Vector4.One );
+                    m_chatHistory.AppendText( text.Message, text.MessageFont, m_chatHistory.TextScale, Vector4.One );
+                    m_chatHistory.AppendLine();
+                }
+            }
         }
 
         private bool ReflectionUnitTests()
@@ -157,7 +182,7 @@ namespace DiscordPlugin
 
             if ( m_chatHistory == null )
                 return false;
-
+            
             m_sendButton.ButtonClicked += M_sendButton_ButtonClicked;
             m_chatbox.EnterPressed += M_chatbox_EnterPressed;
             m_playerList.ItemsSelected += M_playerList_ItemsSelected;
@@ -169,7 +194,7 @@ namespace DiscordPlugin
 
         public void ProcessUpdateFlags()
         {
-            if ( _updateFlags.HasFlag( UpdateFlags.ItemsSelected ) && SelectedItem == null )
+            if ( _updateFlags.HasFlag( UpdateFlags.ItemsSelected ) && _selectedItem == null )
             {
                 //the game has cleared our stuff out of the list, so put it back in and reset focus and restore text and all that
                 if ( Login.Instance.LoginStep != Login.LoginState.Confirmed )
@@ -189,28 +214,39 @@ namespace DiscordPlugin
                     return;
                 }
 
-                if ( LastSelectedItem != null )
+                if ( _lastSelectedItem != null )
                 {
-                    m_playerList.SelectedItems.Add( LastSelectedItem );
-                    SelectedItem = LastSelectedItem;
+                    m_playerList.SelectedItems.Add( _lastSelectedItem );
+                    _selectedItem = _lastSelectedItem;
                 }
 
-                if ( !CurrentFocus && LastFocus )
+                if ( !_currentFocus && _lastFocus )
                 {
-                    CurrentFocus = true;
+                    _currentFocus = true;
                     _terminalInstance.FocusedControl = m_chatbox;
                 }
 
                 if ( !_updateFlags.HasFlag( UpdateFlags.BoxEnter ) && _updateFlags.HasFlag( UpdateFlags.BoxChange ) )
                 {
-                        m_chatbox.SetText( LastText );
+                        m_chatbox.SetText( _lastText );
                         m_chatbox.MoveCarriageToEnd();
-                        CurrentText.Clear();
-                        CurrentText.Append( LastText );
+                        _currentText.Clear();
+                        _currentText.Append( _lastText );
                 }
 
             }
             _updateFlags = 0;
+        }
+
+        public static void FormatMessage( string from, string message, ref MyGuiControlMultilineText history )
+        {
+            MyFontEnum fromFont = MyFontEnum.DarkBlue;
+            if(from.Equals( Login.Instance.Username, StringComparison.CurrentCultureIgnoreCase ))
+                fromFont=MyFontEnum.White;
+
+            history.AppendText( $"{from}: ", fromFont, m_chatHistory.TextScale, Vector4.One );
+            history.AppendText( message, MyFontEnum.White, m_chatHistory.TextScale, Vector4.One );
+            history.AppendLine();
         }
 
         public Version Version
@@ -223,8 +259,8 @@ namespace DiscordPlugin
         private void M_playerList_ItemsSelected( MyGuiControlListbox obj )
         {
             _updateFlags |= UpdateFlags.ItemsSelected;
-            LastSelectedItem = SelectedItem;
-            SelectedItem = m_playerList.SelectedItems.FirstOrDefault();
+            _lastSelectedItem = _selectedItem;
+            _selectedItem = m_playerList.SelectedItems.FirstOrDefault();
         }
 
         private void M_sendButton_ButtonClicked( MyGuiControlButton obj )
@@ -250,20 +286,21 @@ namespace DiscordPlugin
         private void M_chatbox_FocusChanged( MyGuiControlBase arg1, bool arg2 )
         {
             _updateFlags |= UpdateFlags.BoxFocus;
-            LastFocus = CurrentFocus;
-            CurrentFocus = arg2;
+            _lastFocus = _currentFocus;
+            _currentFocus = arg2;
         }
         
         private void M_chatbox_TextChanged(MyGuiControlTextbox obj)
         {
+            //apparently this event can fire multiple times in an update
             if ( _updateFlags.HasFlag( UpdateFlags.BoxChange ) )
                 return;
 
             _updateFlags|= UpdateFlags.BoxChange;
-            LastText.Clear();
-            LastText.Append( CurrentText );
-            CurrentText.Clear();
-            obj.GetText(CurrentText);
+            _lastText.Clear();
+            _lastText.Append( _currentText );
+            _currentText.Clear();
+            obj.GetText(_currentText);
         }
 
         #endregion

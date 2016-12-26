@@ -1,23 +1,29 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using Sandbox;
 using Sandbox.Game.Gui;
 using Sandbox.Game.World;
 using Sandbox.Graphics.GUI;
+using Sandbox.ModAPI;
+using VRage;
 using VRage.Game;
+using VRage.Game.ModAPI;
+using VRage.Library.Utils;
 using VRage.Plugins;
 using VRageMath;
 
 namespace DiscordPlugin
 {
-    public sealed class Plugin : IPlugin
+    public class DiscordPlugin : IPlugin
     {
         private bool _init;
-        private bool _discordInit;
-
+        private bool _unitTests;
+        private static Type _terminalChatType;
         public static Dictionary<MyGuiControlListbox.Item, List<RichTextLabel>> ChatHistories { get; set; } = new Dictionary<MyGuiControlListbox.Item, List<RichTextLabel>>();
         public static MyGuiControlListbox m_playerList;
         public static MyGuiControlTextbox m_chatbox;
@@ -51,7 +57,7 @@ namespace DiscordPlugin
 
         public class RichTextLabel
         {
-            public RichTextLabel( string from, string message, MyFontEnum fromFont, MyFontEnum messageFont = MyFontEnum.White )
+            public RichTextLabel( string from, string message, MyFontEnum fromFont, string messageFont = MyFontEnum.White )
             {
                 From = from;
                 Message = message;
@@ -79,17 +85,16 @@ namespace DiscordPlugin
             if ( !ReflectionUnitTests() )
             {
                 MySandboxGame.Log.WriteLineAndConsole( "##Discord Plugin: Failed reflection unit tests!" );
-                //don't initialize the bot. without _discordInit set, the plugin is effectively disabled
+                _unitTests = false;
                 return;
             }
-
-            //TODO: Initialize discordAPI here. JOHN THIS MEANS YOU
-            _discordInit = true;
+            _unitTests = true;
         }
+        
 
         public void Update()
         {
-            if ( !_discordInit || MySession.Static?.LocalHumanPlayer == null )
+            if ( !_unitTests || MySession.Static?.LocalHumanPlayer == null )
                 return;
 
             if ( MyGuiScreenTerminal.GetCurrentScreen() == MyTerminalPageEnum.None )
@@ -132,14 +137,14 @@ namespace DiscordPlugin
 
         private bool ReflectionUnitTests()
         {
-            Type terminalChatType = typeof(MyGuiScreenTerminal).GetField( "m_controllerChat", BindingFlags.NonPublic | BindingFlags.Instance )?.FieldType;
-            if ( terminalChatType == null )
+            _terminalChatType = typeof(MyGuiScreenTerminal).GetField( "m_controllerChat", BindingFlags.NonPublic | BindingFlags.Instance )?.FieldType;
+            if ( _terminalChatType == null )
             {
                 MySandboxGame.Log.WriteLineAndConsole( "##Discord Plugin: Failed to get terminal chat type" );
                 return false;
             }
 
-            FieldInfo[] fields = terminalChatType.GetFields( BindingFlags.NonPublic | BindingFlags.Instance );
+            FieldInfo[] fields = _terminalChatType.GetFields( BindingFlags.NonPublic | BindingFlags.Instance );
 
             if ( !fields.Any( x => x.Name == "m_playerList" ) )
                 return false;
@@ -251,7 +256,7 @@ namespace DiscordPlugin
 
         public Version Version
         {
-            get { return typeof(Plugin).Assembly.GetName().Version; }
+            get { return typeof(DiscordPlugin).Assembly.GetName().Version; }
         }
 
         #region Event Handlers
@@ -269,7 +274,7 @@ namespace DiscordPlugin
             m_chatbox.Type = MyGuiControlTextboxType.Normal;
             if ( Login.Instance.LoginStep != Login.LoginState.Confirmed )
             {
-                Login.Instance.ProcessLogin( m_chatbox.Text );
+                Login.Instance.ProcessLogin( _lastText.ToString() );
             }
         }
 
@@ -279,7 +284,7 @@ namespace DiscordPlugin
             obj.Type = MyGuiControlTextboxType.Normal;
             if ( Login.Instance.LoginStep != Login.LoginState.Confirmed )
             {
-                Login.Instance.ProcessLogin( obj.Text );
+                Login.Instance.ProcessLogin(_lastText.ToString());
             }
         }
 
